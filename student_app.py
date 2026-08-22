@@ -32,10 +32,18 @@ def load_tests():
 
         # Егер {"tests": [...]} түрінде болса
         if isinstance(data, dict):
-            if "tests" in data:
-                return data["tests"]
+    if "tests" in data:
+        return data["tests"]
 
-        return []
+    tests = []
+
+    for title, test in data.items():
+        if isinstance(test, dict):
+            test = dict(test)
+            test.setdefault("title", title)
+            tests.append(test)
+
+    return tests
 
     except Exception:
         return []
