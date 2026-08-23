@@ -1,151 +1,259 @@
+
 import streamlit as st
 import json
 import os
 import requests
+from datetime import datetime
 
-# ============================================================
-# GOOGLE SHEETS WEB APP
-# ============================================================
 
-GOOGLE_SHEETS_URL = (
+# =========================================================
+# БЕТ БАПТАУ
+# =========================================================
+
+st.set_page_config(
+    page_title="AI Test Maker - Оқушы",
+    page_icon="🎓",
+    layout="wide"
+)
+
+
+# =========================================================
+# GOOGLE SHEETS
+# =========================================================
+
+GOOGLE_SCRIPT_URL = (
     "https://script.google.com/macros/s/"
     "AKfycbwgJoktoyeeNtlmFrNKWD6kTwBeDVDnKbriNrEZ0Aa_1EdaCVq4OuXs2YcigxhpQikU/"
     "exec"
 )
 
 
-# ============================================================
-# БЕТ БАПТАУ
-# ============================================================
+# =========================================================
+# SESSION STATE
+# =========================================================
 
-st.set_page_config(
-    page_title="AI Test Maker - Оқушы",
-    page_icon="🎓",
-    layout="centered"
+DEFAULTS = {
+    "selected_grade": "",
+    "selected_topic": "",
+    "student_name": "",
+    "test_started": False,
+    "test_finished": False,
+    "score": 0,
+    "answers": {},
+    "questions": [],
+    "result_saved": False
+}
+
+for key, value in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# =========================================================
+# СТИЛЬ
+# =========================================================
+
+st.markdown(
+    """
+    <style>
+
+    .main-title {
+        text-align: center;
+        font-size: 42px;
+        font-weight: 800;
+        margin-top: 10px;
+        margin-bottom: 5px;
+    }
+
+    .subtitle {
+        text-align: center;
+        font-size: 20px;
+        color: #666;
+        margin-bottom: 35px;
+    }
+
+    .student-card {
+        background: #f8f9fa;
+        border-radius: 18px;
+        padding: 25px;
+        margin-bottom: 20px;
+        border: 1px solid #e5e7eb;
+    }
+
+    .question-card {
+        background: white;
+        border-radius: 15px;
+        padding: 20px;
+        margin: 15px 0;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    .result-card {
+        background: #f0fdf4;
+        border-radius: 20px;
+        padding: 30px;
+        text-align: center;
+        border: 2px solid #86efac;
+        margin-top: 25px;
+    }
+
+    .big-score {
+        font-size: 55px;
+        font-weight: 800;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 
-# ============================================================
-# СТИЛЬ
-# ============================================================
+# =========================================================
+# JSON ФАЙЛЫН ОҚУ
+# =========================================================
 
-st.markdown("""
-<style>
-
-.main-title {
-    text-align: center;
-    font-size: 34px;
-    font-weight: bold;
-    margin-bottom: 5px;
-}
-
-.sub-title {
-    text-align: center;
-    font-size: 18px;
-    color: #666;
-    margin-bottom: 25px;
-}
-
-.question-box {
-    background-color: #f5f7fa;
-    padding: 18px;
-    border-radius: 12px;
-    margin-bottom: 10px;
-}
-
-.result-box {
-    background-color: #f0f8ff;
-    padding: 25px;
-    border-radius: 15px;
-    text-align: center;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# ============================================================
-# TESTS.JSON ЖҮКТЕУ
-# ============================================================
-
+@st.cache_data
 def load_tests():
 
     file_path = "tests.json"
 
     if not os.path.exists(file_path):
+        return {}
 
-        st.error(
-            "❌ tests.json файлы табылмады!"
-        )
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            data = json.load(file)
 
-        st.info(
-            "student_app.py және tests.json "
-            "бір репозиторийде болуы керек."
-        )
+        return data
 
-        st.stop()
+    except Exception as e:
+        st.error(f"tests.json файлын оқу кезінде қате шықты: {e}")
+        return {}
+
+
+tests_data = load_tests()
+
+
+# =========================================================
+# ТЕСТ ҚҰРЫЛЫМЫН ТҮСІНУ
+# =========================================================
+
+def get_grades(data):
+
+    grades = []
+
+    if isinstance(data, dict):
+
+        for key, value in data.items():
+
+            # Мысалы:
+            # "5": {...}
+            # "6": {...}
+
+            if isinstance(value, dict):
+
+                grade = str(key)
+
+                if grade not in grades:
+                    grades.append(grade)
+
+    return grades
+
+
+def get_topics(data, grade):
+
+    topics = []
+
+    if not isinstance(data, dict):
+        return topics
+
+    grade_data = data.get(grade)
+
+    if not isinstance(grade_data, dict):
+        return topics
+
+    for topic, topic_data in grade_data.items():
+
+        if isinstance(topic_data, dict):
+            topics.append(topic)
+
+    return topics
+
+
+def get_questions(data, grade, topic):
+
+    if not isinstance(data, dict):
+        return []
+
+    grade_data = data.get(grade)
+
+    if not isinstance(grade_data, dict):
+        return []
+
+    topic_data = grade_data.get(topic)
+
+    if not isinstance(topic_data, dict):
+        return []
+
+    questions = topic_data.get("questions", [])
+
+    if not isinstance(questions, list):
+        return []
+
+    return questions
+
+
+# =========================================================
+# GOOGLE SHEETS-ке НӘТИЖЕ ЖІБЕРУ
+# =========================================================
+
+def save_result_to_google_sheets(
+    student_name,
+    grade,
+    topic,
+    score,
+    total_questions
+):
 
     try:
 
-        with open(
-            file_path,
-            "r",
-            encoding="utf-8"
-        ) as file:
+        if total_questions == 0:
+            percent = 0
+        else:
+            percent = round(
+                score / total_questions * 100,
+                1
+            )
 
-            return json.load(file)
+        data = {
+            "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
+            "student": student_name,
+            "grade": grade,
+            "topic": topic,
+            "correct": score,
+            "total": total_questions,
+            "percent": percent
+        }
 
-    except json.JSONDecodeError:
-
-        st.error(
-            "❌ tests.json ішінде қате бар."
+        response = requests.post(
+            GOOGLE_SCRIPT_URL,
+            json=data,
+            timeout=15
         )
 
-        st.stop()
+        if response.status_code == 200:
+            return True
 
-    except Exception as e:
+        return False
 
-        st.error(
-            f"❌ tests.json оқу қатесі: {e}"
-        )
-
-        st.stop()
+    except Exception:
+        return False
 
 
-tests = load_tests()
-
-
-# ============================================================
-# СЫНЫПТАРДЫ АНЫҚТАУ
-# ============================================================
-
-grades = []
-
-for key in tests.keys():
-
-    if str(key).strip().isdigit():
-
-        grades.append(str(key))
-
-
-grades = sorted(
-    grades,
-    key=lambda x: int(x)
-)
-
-
-if not grades:
-
-    st.error(
-        "❌ tests.json файлынан сыныптар табылмады."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# БАСТЫ БЕТ
-# ============================================================
+# =========================================================
+# БАСТЫ ТАҚЫРЫП
+# =========================================================
 
 st.markdown(
     '<div class="main-title">🎓 AI Test Maker</div>',
@@ -153,742 +261,413 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="sub-title">Оқушыға арналған тест жүйесі</div>',
+    '<div class="subtitle">Оқушыға арналған тест жүйесі</div>',
     unsafe_allow_html=True
 )
 
+st.divider()
 
-# ============================================================
-# SESSION STATE
-# ============================================================
 
-if "test_started" not in st.session_state:
-    st.session_state.test_started = False
+# =========================================================
+# НӘТИЖЕ ШЫҚҚАННАН КЕЙІН
+# =========================================================
 
-if "finished" not in st.session_state:
-    st.session_state.finished = False
+if st.session_state.test_finished:
 
-if "answers" not in st.session_state:
-    st.session_state.answers = {}
-
-if "saved_to_sheets" not in st.session_state:
-    st.session_state.saved_to_sheets = False
-
-
-# ============================================================
-# СЫНЫП ТАҢДАУ
-# ============================================================
-
-if not st.session_state.test_started:
-
-    grade_options = [
-        "— Сыныпты таңдаңыз —"
-    ] + grades
-
-    selected_grade = st.selectbox(
-        "🏫 Сыныбыңызды таңдаңыз:",
-        grade_options
-    )
-
-    if selected_grade == "— Сыныпты таңдаңыз —":
-
-        st.info(
-            "☝️ Алдымен сыныпты таңдаңыз."
-        )
-
-        st.stop()
-
-
-    # ========================================================
-    # ТАҢДАЛҒАН СЫНЫПТЫҢ ТАҚЫРЫПТАРЫ
-    # ========================================================
-
-    class_data = tests[selected_grade]
-
-    if not isinstance(class_data, dict):
-
-        st.error(
-            "❌ Таңдалған сыныптың деректері дұрыс емес."
-        )
-
-        st.stop()
-
-
-    topics = []
-
-    for topic_name, topic_data in class_data.items():
-
-        if isinstance(topic_data, dict):
-
-            if topic_name not in [
-                "grade",
-                "subject"
-            ]:
-
-                topics.append(topic_name)
-
-
-    if not topics:
-
-        st.warning(
-            "⚠️ Бұл сыныпта тест тақырыптары жоқ."
-        )
-
-        st.stop()
-
-
-    # ========================================================
-    # ТАҚЫРЫП ТАҢДАУ
-    # ========================================================
-
-    topic_options = [
-        "— Тақырыпты таңдаңыз —"
-    ] + topics
-
-    selected_topic = st.selectbox(
-        "📚 Тақырыпты таңдаңыз:",
-        topic_options
-    )
-
-
-    if selected_topic == "— Тақырыпты таңдаңыз —":
-
-        st.info(
-            "☝️ Тақырыпты таңдаңыз."
-        )
-
-        st.stop()
-
-
-    # ========================================================
-    # ТЕСТ АҚПАРАТЫ
-    # ========================================================
-
-    test = class_data[selected_topic]
-
-    subject = test.get(
-        "subject",
-        "Информатика"
-    )
-
-    questions = test.get(
-        "questions",
-        []
-    )
-
-
-    st.info(
-        f"""
-📚 Пән: **{subject}**
-
-🏫 Сынып: **{selected_grade}**
-
-📖 Тақырып: **{selected_topic}**
-
-📝 Сұрақ саны: **{len(questions)}**
-"""
-    )
-
-
-    # ========================================================
-    # ОҚУШЫ АТЫ
-    # ========================================================
-
-    student_name = st.text_input(
-        "👤 Оқушының аты-жөні:",
-        placeholder="Аты-жөніңізді енгізіңіз"
-    )
-
-
-    # ========================================================
-    # ТЕСТ БАСТАУ
-    # ========================================================
-
-    if st.button(
-        "▶️ Тестті бастау",
-        use_container_width=True
-    ):
-
-        if student_name.strip() == "":
-
-            st.warning(
-                "⚠️ Алдымен аты-жөніңізді енгізіңіз."
-            )
-
-        else:
-
-            st.session_state.student_name = (
-                student_name.strip()
-            )
-
-            st.session_state.selected_grade = (
-                selected_grade
-            )
-
-            st.session_state.selected_topic = (
-                selected_topic
-            )
-
-            st.session_state.test_started = True
-
-            st.session_state.finished = False
-
-            st.session_state.answers = {}
-
-            st.session_state.saved_to_sheets = False
-
-            st.rerun()
-
-
-# ============================================================
-# ТЕСТ БАСТАЛҒАН КЕЗ
-# ============================================================
-
-if (
-    st.session_state.test_started
-    and not st.session_state.finished
-):
-
-    selected_grade = (
-        st.session_state.selected_grade
-    )
-
-    selected_topic = (
-        st.session_state.selected_topic
-    )
-
-    student_name = (
-        st.session_state.student_name
-    )
-
-    class_data = tests[selected_grade]
-
-    test = class_data[selected_topic]
-
-    questions = test.get(
-        "questions",
-        []
-    )
-
-
-    st.markdown("---")
-
-    st.subheader(
-        f"👤 Оқушы: {student_name}"
-    )
-
-    st.write(
-        f"🏫 Сынып: **{selected_grade}**"
-    )
-
-    st.write(
-        f"📚 Тақырып: **{selected_topic}**"
-    )
-
-    st.markdown("---")
-
-
-    # ========================================================
-    # СҰРАҚТАР
-    # ========================================================
-
-    for i, question_data in enumerate(
-        questions
-    ):
-
-        question_text = question_data.get(
-            "question",
-            f"{i + 1}-сұрақ"
-        )
-
-        options_data = question_data.get(
-            "options",
-            {}
-        )
-
-
-        # ----------------------------------------------------
-        # ВАРИАНТТАР
-        # ----------------------------------------------------
-
-        if isinstance(
-            options_data,
-            dict
-        ):
-
-            option_keys = list(
-                options_data.keys()
-            )
-
-            option_values = []
-
-            for key in option_keys:
-
-                option_values.append(
-                    f"{key}) {options_data[key]}"
-                )
-
-
-        elif isinstance(
-            options_data,
-            list
-        ):
-
-            option_keys = []
-
-            option_values = []
-
-            for j, value in enumerate(
-                options_data
-            ):
-
-                letter = chr(65 + j)
-
-                option_keys.append(
-                    letter
-                )
-
-                option_values.append(
-                    f"{letter}) {value}"
-                )
-
-
-        else:
-
-            option_keys = []
-
-            option_values = []
-
-
-        st.markdown(
-            f"""
-            <div class="question-box">
-                <b>{i + 1}. {question_text}</b>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-
-        # ----------------------------------------------------
-        # БОС НҰСҚА
-        # ----------------------------------------------------
-
-        choices = [
-            "— Жауапты таңдаңыз —"
-        ] + option_values
-
-
-        selected_answer = st.radio(
-            "Жауап:",
-            choices,
-            key=f"question_{i}",
-            index=0
-        )
-
-
-        # ----------------------------------------------------
-        # ЖАУАПТЫ САҚТАУ
-        # ----------------------------------------------------
-
-        if (
-            selected_answer
-            != "— Жауапты таңдаңыз —"
-        ):
-
-            selected_letter = (
-                selected_answer
-                .split(")")[0]
-                .strip()
-                .upper()
-            )
-
-            st.session_state.answers[i] = (
-                selected_letter
-            )
-
-        else:
-
-            if i in st.session_state.answers:
-
-                del st.session_state.answers[i]
-
-
-        st.markdown("---")
-
-
-    # ========================================================
-    # ЖАУАП САНЫ
-    # ========================================================
-
-    answered_count = len(
-        st.session_state.answers
-    )
-
-    st.write(
-        f"📊 Жауап берілді: "
-        f"**{answered_count} / {len(questions)}**"
-    )
-
-
-    # ========================================================
-    # ТЕСТІ АЯҚТАУ
-    # ========================================================
-
-    if st.button(
-        "✅ Тестті аяқтау",
-        use_container_width=True
-    ):
-
-        if answered_count < len(questions):
-
-            unanswered = []
-
-            for i in range(
-                len(questions)
-            ):
-
-                if i not in st.session_state.answers:
-
-                    unanswered.append(
-                        i + 1
-                    )
-
-            st.warning(
-                "⚠️ Барлық сұрақтарға жауап беріңіз.\n\n"
-                "Жауап берілмеген сұрақтар: "
-                + ", ".join(
-                    map(
-                        str,
-                        unanswered
-                    )
-                )
-            )
-
-        else:
-
-            st.session_state.finished = True
-
-            st.rerun()
-
-
-# ============================================================
-# НӘТИЖЕ
-# ============================================================
-
-if st.session_state.finished:
-
-    selected_grade = (
-        st.session_state.selected_grade
-    )
-
-    selected_topic = (
-        st.session_state.selected_topic
-    )
-
-    student_name = (
-        st.session_state.student_name
-    )
-
-    class_data = tests[selected_grade]
-
-    test = class_data[selected_topic]
-
-    questions = test.get(
-        "questions",
-        []
-    )
-
-
-    # ========================================================
-    # ҰПАЙ
-    # ========================================================
-
-    score = 0
+    score = st.session_state.score
+    questions = st.session_state.questions
 
     total = len(questions)
 
-
-    for i, question_data in enumerate(
-        questions
-    ):
-
-        correct_answer = str(
-            question_data.get(
-                "answer",
-                ""
-            )
-        ).strip().upper()
-
-
-        student_answer = str(
-            st.session_state.answers.get(
-                i,
-                ""
-            )
-        ).strip().upper()
-
-
-        if student_answer == correct_answer:
-
-            score += 1
-
-
-    # ========================================================
-    # ПАЙЫЗ
-    # ========================================================
-
     if total > 0:
-
-        percentage = round(
-            score / total * 100
-        )
-
+        percent = round(score / total * 100)
     else:
+        percent = 0
 
-        percentage = 0
-
-
-    # ========================================================
-    # БАҒА
-    # ========================================================
-
-    if percentage >= 90:
-
-        grade_mark = 5
-
-    elif percentage >= 70:
-
-        grade_mark = 4
-
-    elif percentage >= 50:
-
-        grade_mark = 3
-
-    else:
-
-        grade_mark = 2
-
-
-    # ========================================================
-    # НӘТИЖЕНІ КӨРСЕТУ
-    # ========================================================
-
-    st.markdown("---")
+    st.success("🎉 Тест аяқталды!")
 
     st.markdown(
         f"""
-        <div class="result-box">
+        <div class="result-card">
 
-        <h2>🎉 Тест аяқталды!</h2>
+        <div style="font-size:24px;">
+        👤 {st.session_state.student_name}
+        </div>
 
-        <h3>👤 {student_name}</h3>
+        <div style="font-size:20px; margin-top:10px;">
+        🎒 {st.session_state.selected_grade}-сынып
+        </div>
 
-        <p>
-        🏫 Сынып:
-        <b>{selected_grade}</b>
-        </p>
+        <div style="font-size:20px; margin-top:5px;">
+        📚 {st.session_state.selected_topic}
+        </div>
 
-        <p>
-        📚 Тақырып:
-        <b>{selected_topic}</b>
-        </p>
+        <div class="big-score">
+        {score} / {total}
+        </div>
 
-        <p>
-        ✅ Дұрыс жауап:
-        <b>{score}/{total}</b>
-        </p>
-
-        <p>
-        📊 Нәтиже:
-        <b>{percentage}%</b>
-        </p>
-
-        <p>
-        🏆 Баға:
-        <b>{grade_mark}</b>
-        </p>
+        <div style="font-size:30px; font-weight:700;">
+        {percent}%
+        </div>
 
         </div>
         """,
         unsafe_allow_html=True
     )
 
+    st.write("")
 
-    if percentage >= 90:
+    if percent >= 90:
+        st.balloons()
+        st.success("🏆 Өте жақсы нәтиже!")
 
-        st.success(
-            "🏆 Өте жақсы!"
-        )
+    elif percent >= 70:
+        st.success("👏 Жақсы нәтиже!")
 
-    elif percentage >= 70:
-
-        st.info(
-            "👍 Жақсы нәтиже!"
-        )
-
-    elif percentage >= 50:
-
-        st.warning(
-            "🙂 Қанағаттанарлық."
-        )
+    elif percent >= 50:
+        st.warning("👍 Жаман емес. Тағы да қайталап көріңіз.")
 
     else:
+        st.error("📚 Тақырыпты қайта қарап шыққаныңыз дұрыс.")
 
-        st.error(
-            "📚 Тақырыпты қайта қарау қажет."
+    st.write("")
+
+    if not st.session_state.result_saved:
+
+        saved = save_result_to_google_sheets(
+            st.session_state.student_name,
+            st.session_state.selected_grade,
+            st.session_state.selected_topic,
+            score,
+            total
         )
 
-
-    # ========================================================
-    # GOOGLE SHEETS-КЕ ЖІБЕРУ
-    # ========================================================
-
-    if not st.session_state.saved_to_sheets:
-
-        result_data = {
-
-            "student": student_name,
-
-            "grade": selected_grade,
-
-            "topic": selected_topic,
-
-            "score": score,
-
-            "total": total,
-
-            "percentage": percentage
-
-        }
-
-
-        try:
-
-            response = requests.post(
-                GOOGLE_SHEETS_URL,
-                json=result_data,
-                timeout=15
-            )
-
-
-            if response.status_code == 200:
-
-                try:
-
-                    response_data = (
-                        response.json()
-                    )
-
-                    if response_data.get(
-                        "success",
-                        False
-                    ):
-
-                        st.session_state.saved_to_sheets = True
-
-                        st.success(
-                            "☁️ Нәтиже мұғалімге жіберілді."
-                        )
-
-                    else:
-
-                        st.warning(
-                            "⚠️ Нәтиже жіберілді, "
-                            "бірақ сервер жауабын тексеру қажет."
-                        )
-
-                except Exception:
-
-                    st.session_state.saved_to_sheets = True
-
-                    st.success(
-                        "☁️ Нәтиже жіберілді."
-                    )
-
-            else:
-
-                st.error(
-                    "❌ Нәтижені Google Sheets-ке "
-                    "жіберу кезінде қате шықты."
-                )
-
-
-        except Exception as e:
-
-            st.error(
-                f"❌ Интернет/сервер қатесі: {e}"
-            )
-
-
-    # ========================================================
-    # ЖАУАПТАРДЫ ТЕКСЕРУ
-    # ========================================================
-
-    st.markdown("---")
-
-    st.subheader(
-        "📋 Жауаптарды тексеру"
-    )
-
-
-    for i, question_data in enumerate(
-        questions
-    ):
-
-        correct_answer = str(
-            question_data.get(
-                "answer",
-                ""
-            )
-        ).strip().upper()
-
-
-        student_answer = str(
-            st.session_state.answers.get(
-                i,
-                ""
-            )
-        ).strip().upper()
-
-
-        if student_answer == correct_answer:
-
-            st.success(
-                f"№{i + 1} — Дұрыс ✅"
-            )
+        if saved:
+            st.session_state.result_saved = True
+            st.success("✅ Нәтиже мұғалімнің нәтижелер кестесіне сақталды.")
 
         else:
-
-            st.error(
-                f"""
-№{i + 1} — Қате ❌
-
-Сіздің жауабыңыз: **{student_answer}**
-
-Дұрыс жауап: **{correct_answer}**
-"""
+            st.warning(
+                "⚠️ Нәтиже кестеге жіберілмеді. "
+                "Бірақ тест нәтижесі экранда сақталды."
             )
 
+    else:
+        st.success("☁️ Нәтиже Google Sheets-те сақталған.")
 
-    # ========================================================
-    # ҚАЙТА БАСТАУ
-    # ========================================================
-
-    st.markdown("---")
+    st.write("")
 
     if st.button(
-        "🔄 Басқа тестті тапсыру",
+        "🔄 Жаңа тест бастау",
         use_container_width=True
     ):
 
+        st.session_state.selected_grade = ""
+        st.session_state.selected_topic = ""
+        st.session_state.student_name = ""
         st.session_state.test_started = False
-
-        st.session_state.finished = False
-
+        st.session_state.test_finished = False
+        st.session_state.score = 0
         st.session_state.answers = {}
-
-        st.session_state.saved_to_sheets = False
+        st.session_state.questions = []
+        st.session_state.result_saved = False
 
         st.rerun()
 
+    st.stop()
+
+
+# =========================================================
+# СЫНЫПТАРДЫ АЛУ
+# =========================================================
+
+grades = get_grades(tests_data)
+
+
+if not grades:
+
+    st.error("❌ tests.json файлынан сыныптар табылмады.")
+
+    st.info(
+        'Әр тесттің ішінде "grade": "5" сияқты сынып көрсетілуі керек.'
+    )
+
+    st.stop()
+
+
+# =========================================================
+# ОҚУШЫ АҚПАРАТЫ
+# =========================================================
+
+st.markdown("### 👤 Оқушы туралы ақпарат")
+
+student_name = st.text_input(
+    "Оқушының аты-жөні:",
+    value=st.session_state.student_name,
+    placeholder="Мысалы: Айдана Ермекова"
+)
+
+st.session_state.student_name = student_name
+
+
+# =========================================================
+# СЫНЫП ТАҢДАУ
+# =========================================================
+
+st.markdown("### 🎒 Сыныбыңызды таңдаңыз")
+
+grade_options = ["-- Сыныпты таңдаңыз --"] + grades
+
+selected_grade = st.selectbox(
+    "Сынып:",
+    grade_options,
+    key="selected_grade_box"
+)
+
+if selected_grade == "-- Сыныпты таңдаңыз --":
+
+    st.session_state.selected_grade = ""
+
+else:
+
+    st.session_state.selected_grade = selected_grade
+
+
+# =========================================================
+# ТАҚЫРЫП ТАҢДАУ
+# =========================================================
+
+if st.session_state.selected_grade:
+
+    topics = get_topics(
+        tests_data,
+        st.session_state.selected_grade
+    )
+
+    st.markdown("### 📚 Тақырыпты таңдаңыз")
+
+    if not topics:
+
+        st.warning(
+            "⚠️ Бұл сыныпқа арналған тақырыптар табылмады."
+        )
+
+        st.stop()
+
+    topic_options = ["-- Тақырыпты таңдаңыз --"] + topics
+
+    selected_topic = st.selectbox(
+        "Тақырып:",
+        topic_options,
+        key="selected_topic_box"
+    )
+
+    if selected_topic == "-- Тақырыпты таңдаңыз --":
+
+        st.session_state.selected_topic = ""
+
+    else:
+
+        st.session_state.selected_topic = selected_topic
+
+
+# =========================================================
+# ТЕСТТІ БАСТАУ
+# =========================================================
+
+st.write("")
+
+if st.button(
+    "▶️ Тестті бастау",
+    use_container_width=True,
+    type="primary"
+):
+
+    if not st.session_state.student_name.strip():
+
+        st.warning(
+            "⚠️ Алдымен оқушының аты-жөнін енгізіңіз."
+        )
+
+        st.stop()
+
+    if not st.session_state.selected_grade:
+
+        st.warning(
+            "⚠️ Алдымен сыныпты таңдаңыз."
+        )
+
+        st.stop()
+
+    if not st.session_state.selected_topic:
+
+        st.warning(
+            "⚠️ Алдымен тақырыпты таңдаңыз."
+        )
+
+        st.stop()
+
+    questions = get_questions(
+        tests_data,
+        st.session_state.selected_grade,
+        st.session_state.selected_topic
+    )
+
+    if not questions:
+
+        st.error(
+            "❌ Бұл тақырып бойынша сұрақтар табылмады."
+        )
+
+        st.stop()
+
+    st.session_state.questions = questions
+    st.session_state.answers = {}
+    st.session_state.score = 0
+    st.session_state.test_started = True
+    st.session_state.test_finished = False
+    st.session_state.result_saved = False
+
+    st.rerun()
+
+
+# =========================================================
+# ТЕСТ СҰРАҚТАРЫ
+# =========================================================
+
+if st.session_state.test_started:
+
+    questions = st.session_state.questions
+
+    st.divider()
+
+    st.markdown(
+        f"""
+        ### 📝 Тест
+
+        *Сынып:* {st.session_state.selected_grade}
+
+        *Тақырып:* {st.session_state.selected_topic}
+
+        *Оқушы:* {st.session_state.student_name}
+
+        *Сұрақ саны:* {len(questions)}
+        """
+    )
+
+    st.write("")
+
+    with st.form("test_form"):
+
+        answers = {}
+
+        for index, question_data in enumerate(questions):
+
+            question_text = question_data.get(
+                "question",
+                f"{index + 1}-сұрақ"
+            )
+
+            options = question_data.get(
+                "options",
+                {}
+            )
+
+            st.markdown(
+                f"""
+                <div class="question-card">
+
+                <b>{index + 1}. {question_text}</b>
+
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            if isinstance(options, dict):
+
+                option_keys = list(options.keys())
+
+                option_labels = [
+                    f"{key}) {options[key]}"
+                    for key in option_keys
+                ]
+
+                selected_option = st.radio(
+                    "Жауабыңызды таңдаңыз:",
+                    option_labels,
+                    key=f"question_{index}",
+                    index=None
+                )
+
+                answers[index] = selected_option
+
+            elif isinstance(options, list):
+
+                selected_option = st.radio(
+                    "Жауабыңызды таңдаңыз:",
+                    options,
+                    key=f"question_{index}",
+                    index=None
+                )
+
+                answers[index] = selected_option
+
+        st.write("")
+
+        submit_test = st.form_submit_button(
+            "✅ Тестті аяқтау",
+            use_container_width=True,
+            type="primary"
+        )
+
+
+    # =====================================================
+    # ТЕСТ НӘТИЖЕСІН ЕСЕПТЕУ
+    # =====================================================
+
+    if submit_test:
+
+        score = 0
+
+        unanswered = 0
+
+        for index, question_data in enumerate(questions):
+
+            selected = answers.get(index)
+
+            if selected is None:
+                unanswered += 1
+                continue
+
+            correct_answer = question_data.get(
+                "answer",
+                ""
+            )
+
+            # ---------------------------------------------
+            # Егер жауап A/B/C/D форматында болса
+            # ---------------------------------------------
+
+            if isinstance(selected, str):
+
+                selected_key = selected[:1].upper()
+
+                correct_key = str(
+                    correct_answer
+                ).strip().upper()
+
+                if selected_key == correct_key:
+                    score += 1
+
+        # ---------------------------------------------
+        # Жауаптарды сақтау
+        # ---------------------------------------------
+
+        st.session_state.answers = answers
+        st.session_state.score = score
+
+        st.session_state.test_started = False
+        st.session_state.test_finished = True
+
+        st.rerun()
