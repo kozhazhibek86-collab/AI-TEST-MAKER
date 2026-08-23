@@ -21,8 +21,9 @@ st.markdown("""
 
 .main-title {
     text-align: center;
-    font-size: 36px;
-    font-weight: bold;
+    font-size: 38px;
+    font-weight: 700;
+    margin-top: 10px;
     margin-bottom: 5px;
 }
 
@@ -33,18 +34,30 @@ st.markdown("""
     margin-bottom: 30px;
 }
 
-.test-card {
+.mode-box {
     background-color: #f5f7fa;
+    padding: 18px;
+    border-radius: 14px;
+    margin-bottom: 20px;
+}
+
+.card {
+    background-color: #f8f9fb;
     padding: 20px;
-    border-radius: 12px;
+    border-radius: 15px;
+    border: 1px solid #e5e7eb;
     margin-bottom: 15px;
 }
 
-.question-card {
-    background-color: #ffffff;
-    border: 1px solid #dddddd;
+.big-number {
+    font-size: 30px;
+    font-weight: bold;
+}
+
+.question-box {
+    background-color: #f5f7fa;
     padding: 15px;
-    border-radius: 10px;
+    border-radius: 12px;
     margin-bottom: 10px;
 }
 
@@ -53,7 +66,7 @@ st.markdown("""
 
 
 # ============================================================
-# ТЕСТТЕРДІ ЖҮКТЕУ
+# TESTТЕРДІ ЖҮКТЕУ
 # ============================================================
 
 def load_tests():
@@ -65,10 +78,8 @@ def load_tests():
         st.error("❌ tests.json файлы табылмады!")
 
         st.info(
-            "GitHub репозиторийде мына файлдар болуы керек:\n\n"
-            "• student_app.py\n"
-            "• teacher_app.py\n"
-            "• tests.json"
+            "teacher_app.py және tests.json файлдары "
+            "бір репозиторийде болуы керек."
         )
 
         return {}
@@ -81,14 +92,12 @@ def load_tests():
             encoding="utf-8"
         ) as file:
 
-            data = json.load(file)
-
-        return data
+            return json.load(file)
 
     except json.JSONDecodeError:
 
         st.error(
-            "❌ tests.json файлының ішінде JSON қатесі бар."
+            "❌ tests.json файлында JSON қатесі бар."
         )
 
         return {}
@@ -96,15 +105,11 @@ def load_tests():
     except Exception as e:
 
         st.error(
-            f"❌ Файлды оқу кезінде қате шықты: {e}"
+            f"❌ Қате: {e}"
         )
 
         return {}
 
-
-# ============================================================
-# ДЕРЕКТЕРДІ ЖҮКТЕУ
-# ============================================================
 
 tests_data = load_tests()
 
@@ -113,90 +118,40 @@ if not tests_data:
 
 
 # ============================================================
-# ТАҚЫРЫПТАРДЫ ЖИНАУ
+# ТАҚЫРЫПТАР МЕН СЫНЫПТАР
 # ============================================================
 
 all_tests = []
 
-for topic_name, test_data in tests_data.items():
+for grade_key, grade_data in tests_data.items():
 
-    if not isinstance(test_data, dict):
-        continue
+    if isinstance(grade_data, dict):
 
-    subject = test_data.get(
-        "subject",
-        "Информатика"
-    )
+        for topic_name, test_data in grade_data.items():
 
-    grade = str(
-        test_data.get(
-            "grade",
-            ""
-        )
-    )
+            if isinstance(test_data, dict):
 
-    questions = test_data.get(
-        "questions",
-        []
-    )
-
-    all_tests.append({
-
-        "topic": topic_name,
-
-        "subject": subject,
-
-        "grade": grade,
-
-        "questions": questions
-
-    })
+                all_tests.append({
+                    "grade": str(
+                        test_data.get(
+                            "grade",
+                            grade_key
+                        )
+                    ),
+                    "topic": topic_name,
+                    "subject": test_data.get(
+                        "subject",
+                        "Информатика"
+                    ),
+                    "questions": test_data.get(
+                        "questions",
+                        []
+                    )
+                })
 
 
 # ============================================================
-# ТАҚЫРЫП ЖОҚ БОЛСА
-# ============================================================
-
-if len(all_tests) == 0:
-
-    st.error(
-        "❌ tests.json ішінде тесттер табылмады."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# ТАҚЫРЫПТАРДЫҢ БАРЛЫҚ СЫНЫПТАРЫН АЛУ
-# ============================================================
-
-grades = sorted(
-    list(
-        set(
-            test["grade"]
-            for test in all_tests
-            if test["grade"] != ""
-        )
-    )
-)
-
-
-# ============================================================
-# ТАҚЫРЫПТАР
-# ============================================================
-
-topics = sorted(
-    list(
-        set(
-            test["topic"]
-            for test in all_tests
-        )
-    )
-)
-
-
-# ============================================================
-# БАСТЫ БЕТ
+# БАСТЫ БӨЛІК
 # ============================================================
 
 st.markdown(
@@ -205,71 +160,155 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="sub-title">'
-    'Мұғалімнің басқару панелі'
+    '<div class="sub-title">Мұғалімнің басқару панелі</div>',
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# РЕЖИМДЕР
+# ============================================================
+
+st.markdown(
+    '<div class="mode-box">',
+    unsafe_allow_html=True
+)
+
+mode = st.radio(
+    "Жүйеге кіру режимін таңдаңыз:",
+    [
+        "👩‍🏫 Мұғалім",
+        "🎓 Оқушы",
+        "📊 Нәтижелер"
+    ],
+    horizontal=True
+)
+
+st.markdown(
     '</div>',
     unsafe_allow_html=True
 )
 
 
 # ============================================================
-# ЖАЛПЫ АҚПАРАТ
+# МҰҒАЛІМ РЕЖИМІ
 # ============================================================
 
-col1, col2, col3 = st.columns(3)
+if mode == "👩‍🏫 Мұғалім":
 
-with col1:
+    st.header("👩‍🏫 Мұғалім режимі")
 
-    st.metric(
-        "📚 Барлық тест",
-        len(all_tests)
+    st.write(
+        "Бұл бөлімде барлық сыныптар, тақырыптар және тесттер көрінеді."
     )
 
-with col2:
+    st.markdown("---")
 
-    st.metric(
-        "🎓 Сынып саны",
-        len(grades)
+    # --------------------------------------------------------
+    # ЖАЛПЫ СТАТИСТИКА
+    # --------------------------------------------------------
+
+    total_tests = len(all_tests)
+
+    total_questions = sum(
+        len(test["questions"])
+        for test in all_tests
     )
 
-with col3:
-
-    st.metric(
-        "📝 Тақырып саны",
-        len(topics)
+    grades = sorted(
+        list(
+            set(
+                test["grade"]
+                for test in all_tests
+            )
+        )
     )
 
+    topics = sorted(
+        list(
+            set(
+                test["topic"]
+                for test in all_tests
+            )
+        )
+    )
 
-st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        st.metric(
+            "📚 Сыныптар",
+            len(grades)
+        )
+
+    with col2:
+
+        st.metric(
+            "📖 Тақырыптар",
+            len(topics)
+        )
+
+    with col3:
+
+        st.metric(
+            "📝 Тесттер",
+            total_tests
+        )
+
+    with col4:
+
+        st.metric(
+            "❓ Сұрақтар",
+            total_questions
+        )
 
 
-# ============================================================
-# СҮЗГІЛЕР
-# ============================================================
+    st.markdown("---")
 
-st.subheader("🔎 Тесттерді іздеу")
+    # --------------------------------------------------------
+    # СЫНЫПТЫ ТАҢДАУ
+    # --------------------------------------------------------
 
-
-col1, col2 = st.columns(2)
-
-
-with col1:
+    st.subheader("🔎 Тесттерді іздеу")
 
     grade_options = [
         "Барлық сыныптар"
     ] + grades
 
     selected_grade = st.selectbox(
-        "🎓 Сыныпты таңдаңыз:",
+        "🏫 Сыныпты таңдаңыз:",
         grade_options
     )
 
 
-with col2:
+    # --------------------------------------------------------
+    # ТАҚЫРЫПТЫ ТАҢДАУ
+    # --------------------------------------------------------
+
+    filtered_tests = all_tests
+
+    if selected_grade != "Барлық сыныптар":
+
+        filtered_tests = [
+            test
+            for test in all_tests
+            if test["grade"] == selected_grade
+        ]
+
+
+    filtered_topics = sorted(
+        list(
+            set(
+                test["topic"]
+                for test in filtered_tests
+            )
+        )
+    )
 
     topic_options = [
         "Барлық тақырыптар"
-    ] + topics
+    ] + filtered_topics
 
     selected_topic = st.selectbox(
         "📚 Тақырыпты таңдаңыз:",
@@ -277,179 +316,215 @@ with col2:
     )
 
 
-# ============================================================
-# СҮЗГІЛЕУ
-# ============================================================
+    # --------------------------------------------------------
+    # ҚОСЫМША СҮЗГІ
+    # --------------------------------------------------------
 
-filtered_tests = []
+    if selected_topic != "Барлық тақырыптар":
 
-for test in all_tests:
-
-    grade_match = (
-        selected_grade == "Барлық сыныптар"
-        or test["grade"] == selected_grade
-    )
-
-    topic_match = (
-        selected_topic == "Барлық тақырыптар"
-        or test["topic"] == selected_topic
-    )
-
-    if grade_match and topic_match:
-
-        filtered_tests.append(test)
+        filtered_tests = [
+            test
+            for test in filtered_tests
+            if test["topic"] == selected_topic
+        ]
 
 
-# ============================================================
-# НӘТИЖЕ САНЫ
-# ============================================================
+    st.markdown("---")
 
-st.markdown("---")
-
-st.write(
-    f"📊 Табылған тест саны: *{len(filtered_tests)}*"
-)
+    st.subheader("📋 Тесттер тізімі")
 
 
-# ============================================================
-# ТЕСТТЕРДІ КӨРСЕТУ
-# ============================================================
+    # --------------------------------------------------------
+    # ТЕСТТЕРДІ КӨРСЕТУ
+    # --------------------------------------------------------
 
-for number, test in enumerate(
-    filtered_tests,
-    start=1
-):
+    if not filtered_tests:
 
-    topic = test["topic"]
+        st.warning(
+            "Бұл таңдауға сәйкес тест табылмады."
+        )
 
-    subject = test["subject"]
+    else:
 
-    grade = test["grade"]
+        for number, test in enumerate(
+            filtered_tests,
+            start=1
+        ):
 
-    questions = test["questions"]
-
-
-    # ========================================================
-    # ТЕСТ ТУРАЛЫ АҚПАРАТ
-    # ========================================================
-
-    with st.expander(
-        f"📚 {number}. {topic} — {grade}-сынып",
-        expanded=False
-    ):
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-
-            st.write(
-                f"📚 *Пән:* {subject}"
-            )
-
-        with col2:
-
-            st.write(
-                f"🎓 *Сынып:* {grade}"
-            )
-
-        with col3:
-
-            st.write(
-                f"📝 *Сұрақ саны:* {len(questions)}"
-            )
-
-
-        st.markdown("---")
-
-
-        # ====================================================
-        # СҰРАҚТАР
-        # ====================================================
-
-        if len(questions) == 0:
-
-            st.warning(
-                "Бұл тестте сұрақтар жоқ."
-            )
-
-        else:
-
-            for i, question_data in enumerate(
-                questions,
-                start=1
+            with st.expander(
+                f"📝 {number}. {test['topic']} — {test['grade']} сынып"
             ):
 
-                question_text = question_data.get(
-                    "question",
-                    ""
-                )
+                col1, col2 = st.columns(2)
 
-                options = question_data.get(
-                    "options",
-                    {}
-                )
+                with col1:
 
-                correct_answer = question_data.get(
-                    "answer",
-                    ""
-                )
+                    st.write(
+                        f"📚 *Пән:* {test['subject']}"
+                    )
 
+                    st.write(
+                        f"🏫 *Сынып:* {test['grade']}"
+                    )
 
-                st.markdown(
-                    f"### {i}. {question_text}"
-                )
+                with col2:
 
+                    st.write(
+                        f"📖 *Тақырып:* {test['topic']}"
+                    )
 
-                # ------------------------------------------------
-                # ВАРИАНТТАР
-                # ------------------------------------------------
-
-                if isinstance(options, dict):
-
-                    for key, value in options.items():
-
-                        if str(key).upper() == str(
-                            correct_answer
-                        ).upper():
-
-                            st.success(
-                                f"*{key}) {value}* ✅ Дұрыс жауап"
-                            )
-
-                        else:
-
-                            st.write(
-                                f"{key}) {value}"
-                            )
-
-
-                elif isinstance(options, list):
-
-                    for j, value in enumerate(
-                        options
-                    ):
-
-                        letter = chr(
-                            65 + j
-                        )
-
-                        if letter == str(
-                            correct_answer
-                        ).upper():
-
-                            st.success(
-                                f"*{letter}) {value}* "
-                                f"✅ Дұрыс жауап"
-                            )
-
-                        else:
-
-                            st.write(
-                                f"{letter}) {value}"
-                            )
-
+                    st.write(
+                        f"❓ *Сұрақ саны:* "
+                        f"{len(test['questions'])}"
+                    )
 
                 st.markdown("---")
+
+                st.write("*Сұрақтар:*")
+
+                for i, question in enumerate(
+                    test["questions"],
+                    start=1
+                ):
+
+                    question_text = question.get(
+                        "question",
+                        ""
+                    )
+
+                    st.markdown(
+                        f"""
+                        <div class="question-box">
+                        <b>{i}. {question_text}</b>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+
+# ============================================================
+# ОҚУШЫ РЕЖИМІ
+# ============================================================
+
+elif mode == "🎓 Оқушы":
+
+    st.header("🎓 Оқушы режимі")
+
+    st.info(
+        "Оқушыларға арналған тест жүйесі."
+    )
+
+    st.markdown("---")
+
+    st.write(
+        "Оқушы режимі жеке сілтемеде жұмыс істейді:"
+    )
+
+    st.code(
+        "student_app.py"
+    )
+
+    st.success(
+        "Оқушыларға student_app.py арқылы жасалған "
+        "сілтемені жіберіңіз."
+    )
+
+
+# ============================================================
+# НӘТИЖЕЛЕР РЕЖИМІ
+# ============================================================
+
+elif mode == "📊 Нәтижелер":
+
+    st.header("📊 Нәтижелер")
+
+    st.info(
+        "Оқушылардың тест нәтижелері осы бөлімде көрсетіледі."
+    )
+
+    st.markdown("---")
+
+    # --------------------------------------------------------
+    # НӘТИЖЕ ФАЙЛЫН ТЕКСЕРУ
+    # --------------------------------------------------------
+
+    if os.path.exists("results.json"):
+
+        try:
+
+            with open(
+                "results.json",
+                "r",
+                encoding="utf-8"
+            ) as file:
+
+                results_data = json.load(file)
+
+
+            if results_data:
+
+                st.subheader(
+                    "📋 Оқушылардың нәтижелері"
+                )
+
+                for result in results_data:
+
+                    st.markdown(
+                        f"""
+                        <div class="card">
+                            <h3>
+                            👤 {result.get("student_name", "Оқушы")}
+                            </h3>
+
+                            <p>
+                            🏫 Сынып:
+                            <b>{result.get("grade", "-")}</b>
+                            </p>
+
+                            <p>
+                            📚 Тақырып:
+                            <b>{result.get("topic", "-")}</b>
+                            </p>
+
+                            <p>
+                            ✅ Дұрыс жауап:
+                            <b>{result.get("score", 0)}</b>
+                            /
+                            <b>{result.get("total", 0)}</b>
+                            </p>
+
+                            <p>
+                            📊 Нәтиже:
+                            <b>{result.get("percentage", 0)}%</b>
+                            </p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+            else:
+
+                st.warning(
+                    "Әзірге нәтижелер жоқ."
+                )
+
+        except Exception as e:
+
+            st.error(
+                f"Нәтижелерді оқу кезінде қате: {e}"
+            )
+
+    else:
+
+        st.warning(
+            "📊 Әзірге оқушылардың нәтижелері жоқ."
+        )
+
+        st.write(
+            "Оқушылар тест тапсырғаннан кейін "
+            "нәтижелер осы бөлімде көрсетілетіндей "
+            "жүйені байланыстыруға болады."
+        )
 
 
 # ============================================================
@@ -458,8 +533,6 @@ for number, test in enumerate(
 
 st.markdown("---")
 
-st.info(
-    "👩‍🏫 Бұл — мұғалім режимі. "
-    "Мұнда барлық сыныптар, тақырыптар, "
-    "сұрақтар және дұрыс жауаптар көрінеді."
+st.caption(
+    "AI Test Maker • Информатика пәніне арналған тест жүйесі"
 )
